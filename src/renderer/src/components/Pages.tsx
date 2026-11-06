@@ -1,5 +1,6 @@
 import { L, locale, type Lang } from '../../../shared/lang'
-import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
+import type { DriveBackupStatus } from '../../../shared/rpc'
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   agentById,
   navigate,
@@ -33,6 +34,10 @@ import {
   importTeam,
   backupNow,
   openBackups,
+  driveBackupStatus,
+  driveBackupConnect,
+  driveBackupDisconnect,
+  driveBackupUploadNow,
   type TelegramInfo,
   useStore,
   EFFORTS,
@@ -1782,6 +1787,8 @@ export const SETTINGS_TABS = (team = false, admin = true, owner = true): TabList
   ...(team ? [['pessoas', L('Pessoas', 'People')] as [string, string]] : []),
   ...(team && admin ? [['atividade', L('Atividade', 'Activity')] as [string, string]] : []),
   ...(admin && hasServers() ? [['servidores', L('Servidores', 'Servers')] as [string, string]] : [])
+  ...(admin ? [['backup', L('Backup', 'Backup')] as [string, string]] : []),
+  ['backup', L('Backup', 'Backup')]
 ]
 const AGENT_TABS = (): TabList => [
   ['perfil', L('Perfil', 'Profile')],
@@ -2409,6 +2416,57 @@ export function SettingsPage(): ReactNode {
   const tabs = SETTINGS_TABS(team, admin, owner)
   const tab = useTab('settings', tabs)
   const pane = (t: string): boolean => tab === t
+
+  // Google Drive backup state
+  const [driveStatus, setDriveStatus] = useState<DriveBackupStatus>({ connected: false })
+  const [note, setNote] = useState<string | undefined>()
+  const clientIdRef = useRef<HTMLInputElement>(null)
+  const clientSecretRef = useRef<HTMLInputElement>(null)
+
+  const loadDriveStatus = async () => {
+    try {
+      setDriveStatus(await driveBackupStatus())
+    } catch {
+      setDriveStatus({ connected: false })
+    }
+  }
+  useEffect(() => {
+    loadDriveStatus()
+  }, [])
+
+  const connect = async () => {
+    const id = clientIdRef.current?.value.trim()
+    const secret = clientSecretRef.current?.value.trim()
+    if (!id || !secret) return
+    try {
+      await driveBackupConnect({ clientId: id, clientSecret: secret })
+      await loadDriveStatus()
+      clientIdRef.current!.value = ''
+      clientSecretRef.current!.value = ''
+    } catch (e: unknown) {
+      setNote((e as Error).message)
+    }
+  }
+
+  const disconnect = async () => {
+    try {
+      await driveBackupDisconnect()
+      await loadDriveStatus()
+    } catch (e: unknown) {
+      setNote((e as Error).message)
+    }
+  }
+
+  const uploadNow = async () => {
+    try {
+      const f = await driveBackupUploadNow()
+      setNote(L(`Enviado para o Drive: ${f}`, `Uploaded to Drive: ${f}`))
+      await loadDriveStatus()
+    } catch (e: unknown) {
+      setNote((e as Error).message)
+    }
+  }
+
   return (
     <Page title={L('Configurações', 'Settings')}>
       <Tabs page="settings" tabs={tabs} />
@@ -2632,6 +2690,7 @@ export function SettingsPage(): ReactNode {
 
         {pane('geral') && admin && <TeamCard />}
         {pane('geral') && <BackupCard />}
+        {pane('backup') && (
         {pane('servidores') && <ServersCard />}
 
         {pane('agentes') && (

@@ -31,6 +31,13 @@ export interface Snapshot {
   inbox: Inbox // what waits on this person: approvals they can decide, questions to them
 }
 
+export interface DriveBackupStatus {
+  connected: boolean
+  lastUpload?: string // ISO
+  lastError?: string
+  folderId?: string
+}
+
 export interface Api {
   markRead(p: { conversationId: string }): void
   snapshot(): Snapshot
@@ -145,6 +152,11 @@ export interface Api {
   restoreCancel(): void
   restoreInfo(): { at: number; routines: number } | null // the last restore, for what to redo after it
   openBackups(): void
+  // Google Drive backup (opcional, só com TUCANO_GDRIVE_CLIENT_ID/SECRET definidos)
+  driveBackupStatus(): Promise<DriveBackupStatus>
+  driveBackupConnect(p: { clientId: string; clientSecret: string }): Promise<void>
+  driveBackupDisconnect(): Promise<void>
+  driveBackupUploadNow(): Promise<string>
   report(p: { week?: number }): Report // the calendar week starting at `week` (a Monday); this one by default
   usage(): UsageReport
   removeRoutine(p: { id: string }): void

@@ -59,6 +59,7 @@ import {
   type BackupSummary
 } from '../../shared/types'
 import { call, connect, disconnect } from './rpc'
+import type { DriveBackupStatus } from '../../shared/rpc'
 
 export * from '../../shared/types'
 
@@ -1007,6 +1008,11 @@ export const restoreInfo = (): Promise<{ at: number; routines: number } | null> 
 export const importAgents = (p: { path?: string; data?: string }): Promise<string> => call('importAgents', p)
 export const backupNow = (): Promise<string> => call('backupNow')
 export const openBackups = (): void => void fire(L('Não consegui abrir a pasta de backups.', "I couldn't open the backups folder."), 'openBackups')
+export const driveBackupStatus = (): Promise<DriveBackupStatus> => call('driveBackupStatus')
+export const driveBackupConnect = (p: { clientId: string; clientSecret: string }): Promise<void> =>
+  call('driveBackupConnect', p)
+export const driveBackupDisconnect = (): Promise<void> => call('driveBackupDisconnect')
+export const driveBackupUploadNow = (): Promise<string> => call('driveBackupUploadNow')
 export const loadReport = (week?: number): Promise<Report> => call('report', { week })
 export const loadUsage = (): Promise<UsageReport> => call('usage')
 export const removeRoutine = (id: string): void => void fire(L('Não consegui remover a rotina.', "I couldn't remove the routine."), 'removeRoutine', { id })
