@@ -1,7 +1,8 @@
+
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { cleanRules, isAutonomy } from '../shared/actions'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, readdirSync, statSync } from 'node:fs'
 import { ALL_PARTS, GENERAL_SETTINGS, WORKSPACE_PARTS, type WorkspaceParts } from '../shared/workspaces'
 import { dirname, join } from 'node:path'
 import {
@@ -42,7 +43,6 @@ import {
   type ToolClass,
   type Trigger
 } from '../shared/types'
-
 const JEV_KEY = 'typesafe:key' // jev.ts's JEV_SECRET: the router's key goes with the general settings
 
 // Each entry runs once, in order; PRAGMA user_version records how far we got.
@@ -1351,6 +1351,20 @@ export class Db {
   setSecret(key: string, value: string | undefined): void {
     if (value === undefined) this.db.prepare('DELETE FROM secrets WHERE key = ?').run(key)
     else this.db.prepare('INSERT INTO secrets (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value)
+  }
+
+  // ---------- latest local backup ----------
+  latestBackup(dir: string): string | undefined {
+    try {
+      const files = readdirSync(dir)
+        .filter((f) => /^(tucano|agent-desk)-.*\.db$/.test(f))
+        .map((f) => join(dir, f))
+        .map((f) => ({ path: f, mtime: statSync(f).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)
+      return files[0]?.path
+    } catch {
+      return undefined
+    }
   }
 
   // ---------- approvals ----------

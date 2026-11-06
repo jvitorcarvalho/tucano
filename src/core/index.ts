@@ -58,6 +58,7 @@ import { WikiReviewer } from './wiki-review'
 import { extractFile, extractLink } from './wiki-extract'
 import { backup, backupIfDue, exportTeam, importTeam } from './team'
 import { cancelRestore, finishRestore, markRestoreReady, stageRestore, writeBackup } from './restore'
+import { DriveBackup } from './drive'
 import { applyForeignTeam, readForeignZip } from './agent-import'
 import { extractZip, zipFromBuffer, zipFromFile } from './zip'
 import { Telegram } from './telegram'
@@ -758,7 +759,8 @@ const connectors = new ConnectorManager({
   secrets,
   emit,
   // On a server there's nothing to open it in: authorizeConnector hands it to the page.
-  openUrl: (url) => serverMode || toMain({ type: 'open', url }),
+  // On a server there's nothing to open it in: authorizeConnector hands it to the page.
+  openUrl: async (url) => { void (serverMode || toMain({ type: 'open', url })) },
   // On a server behind https (TUCANO_URL), the provider sends the person back to the server's own
   // address, which src/server hands over here; on a desktop, to the gateway on this computer.
   oauthCallbackUrl: () => (serverMode && publicUrl?.startsWith('https://') ? `${publicUrl}/oauth/callback` : gateway.url('/oauth/callback')),
@@ -779,6 +781,20 @@ const memory = new Memories({ db, engines: engineImpls, settings: () => enginesR
 
 const computers = new Computers({ db, dataDir, emit, shoot })
 const backups = join(dataDir, 'backups')
+
+// Google Drive backup: só ativo quando o usuário configurou client_id/secret via env.
+// Nenhuma credencial é gravada no repo; cada usuário cria seu próprio projeto no Google Cloud.
+const gdriveClientId = process.env['TUCANO_GDRIVE_CLIENT_ID']
+const gdriveClientSecret = process.env['TUCANO_GDRIVE_CLIENT_SECRET']
+let driveBackup: DriveBackup | undefined
+if (gdriveClientId && gdriveClientSecret) {
+  driveBackup = new DriveBackup(
+    secrets,
+    gdriveClientId,
+    gdriveClientSecret,
+    async (url) => { void (serverMode || toMain({ type: 'open', url })) },
+  )
+}
 
 // The runner runs routines, and agents schedule routines through the runner's tools.
 const routines = new Routines({
@@ -1023,7 +1039,7 @@ void ready.then(async () => {
     void telegram?.start()
   }
   // A copy of the database once a day, the last 7 kept.
-  const daily = (): void => {
+  const daily = async (): Promise<void> => {
     try {
       backupIfDue(db, backups, workspaceLabel(db.getSettings(DEFAULTS)))
     } catch (e) {
@@ -1034,6 +1050,15 @@ void ready.then(async () => {
       purged(people.sweep())
     } catch (e) {
       console.error('[people]', e)
+    // Upload para o Drive é best-effort: nunca derruba o backup local.
+    if (driveBackup) {
+      const last = db.latestBackup(backups)
+      if (last) {
+        void driveBackup.upload(last).catch((e) => {
+          console.error('[backup:drive]', e)
+          void driveBackup?.setStatus({ lastError: String(e) })
+        })
+      }
     }
   }
   daily()
@@ -1729,6 +1754,15 @@ const api: Handlers = {
   restoreInfo: () => {
     const at = Number(db.meta('restoredAt') ?? 0)
     return at ? { at, routines: Number(db.meta('restoredRoutines') ?? 0) } : null
+  backupNow: () => {
+    const file = backup(db, backups)
+    if (driveBackup) {
+      void driveBackup.upload(file).catch((e) => {
+        console.error('[backup:drive]', e)
+        void driveBackup?.setStatus({ lastError: String(e) })
+      })
+    }
+    return file
   },
   openBackups: () => {
     mkdirSync(backups, { recursive: true })
